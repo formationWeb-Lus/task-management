@@ -1,24 +1,37 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+/**
+ * Component: RootLayout
+ * Description: Root navigation layout component using Expo Router's Stack navigator.
+ * Configures the primary stack screens and their respective header navigation options.
+ */
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { Stack } from "expo-router";
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack>
+      {/* Home Screen: Displays task list */}
+      <Stack.Screen
+        name="index"
+        options={{
+          title: "My Tasks",
+        }}
+      />
+
+      {/* Add Task Screen: Form to create new tasks */}
+      <Stack.Screen
+        name="add-task"
+        options={{
+          title: "Add a Task",
+        }}
+      />
+
+      {/* Time Tracking Screen: Stopwatch and time recording */}
+      <Stack.Screen
+        name="time"
+        options={{
+          title: "Time Tracking",
+        }}
+      />
+    </Stack>
   );
 }
