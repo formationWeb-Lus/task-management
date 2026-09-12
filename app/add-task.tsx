@@ -1,27 +1,40 @@
 /**
  * Component: AddTask
- * Description: Screen for creating a new task in the application.
- * Contains a complete form with title, description, date/time selection
- * and image addition (via camera or gallery).
+ * Description:
+ * Screen used to create and save a new task.
+ *
+ * The screen allows the user to:
+ * - Enter a task title and description.
+ * - Select a due date and time.
+ * - Add a photo from the camera or gallery.
+ * - Save the task permanently using AsyncStorage.
+ *
+ * The same AsyncStorage key is used by the home screen
+ * so both screens can access the same task data.
  */
 
-// --- IMPORTS ---
+// ==========================================
+// IMPORTS
+// ==========================================
 
-// Native date and time picker component
+// Native date and time picker
 import DateTimePicker, {
     DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 
-// Expo API for camera and photo gallery access
+// Expo image picker for camera and gallery
 import * as ImagePicker from "expo-image-picker";
 
-// Expo Router navigation utility for screen changes
+// AsyncStorage allows tasks to remain saved on the device
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Expo Router navigation
 import { router } from "expo-router";
 
-// React Hooks for state management
+// React state management
 import { useState } from "react";
 
-// Core React Native components
+// React Native components
 import {
     Alert,
     Image,
@@ -35,71 +48,104 @@ import {
     View,
 } from "react-native";
 
-// Component to prevent overlapping with notches and the home bar
+// SafeAreaView prevents content from overlapping system areas
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// ==========================================
+// STORAGE CONFIGURATION
+// ==========================================
+
+/**
+ * Storage key shared with index.tsx.
+ *
+ * Important:
+ * The same key must be used everywhere in the application
+ * so all screens access the same list of tasks.
+ */
+export const TASKS_STORAGE_KEY = "@task_management_tasks";
+
+// ==========================================
+// COMPONENT
+// ==========================================
 
 export default function AddTask() {
   // ==========================================
-  // FORM STATES (STATE MANAGEMENT)
+  // FORM STATES
   // ==========================================
 
-  /** Task Title (Required field) */
+  /** Task title */
   const [title, setTitle] = useState("");
 
-  /** Detailed description of the task (Optional) */
+  /** Optional task description */
   const [description, setDescription] = useState("");
 
-  /** Local URI of the selected or captured image */
+  /** URI of the selected or captured image */
   const [imageUri, setImageUri] = useState<string | null>(null);
 
-  /** Chosen due date */
+  /** Selected due date */
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
-  /** Chosen due time */
+  /** Selected due time */
   const [selectedTime, setSelectedTime] = useState<Date>(new Date());
 
   // ==========================================
-  // USER INTERFACE STATES (UI STATES)
+  // UI STATES
   // ==========================================
 
-  /** Indicates if a validation error is displayed on the title */
+  /** Displays an error when the title is empty */
   const [titleError, setTitleError] = useState(false);
 
-  /** Controls visibility of the native date Picker */
+  /** Controls the date picker */
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  /** Controls visibility of the native time Picker */
+  /** Controls the time picker */
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  /** Controls visibility of the media modal menu (Camera / Gallery choice) */
+  /** Controls the camera/gallery modal */
   const [isMediaModalVisible, setIsMediaModalVisible] = useState(false);
 
-  /** Controls visibility of the fullscreen image preview modal */
+  /** Controls the fullscreen image preview */
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
 
+  /** Prevents multiple save operations */
+  const [isSaving, setIsSaving] = useState(false);
+
   // ==========================================
-  // DATE AND TIME HANDLERS
+  // DATE HANDLERS
   // ==========================================
 
   /**
-   * Updates the selected date.
-   * On Android, automatically hides the picker after validation.
+   * Handles changes made in the date picker.
+   *
+   * Android closes the picker after selecting a date.
+   * iOS keeps the picker visible.
    */
   const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
-    setShowDatePicker(Platform.OS === "ios"); // Keep picker on iOS, close on Android
-    if (date) setSelectedDate(date);
+    setShowDatePicker(Platform.OS === "ios");
+
+    if (date) {
+      setSelectedDate(date);
+    }
   };
 
   /**
-   * Updates the selected time.
-   * On Android, automatically hides the picker after validation.
+   * Handles changes made in the time picker.
    */
   const handleTimeChange = (event: DateTimePickerEvent, time?: Date) => {
     setShowTimePicker(Platform.OS === "ios");
-    if (time) setSelectedTime(time);
+
+    if (time) {
+      setSelectedTime(time);
+    }
   };
 
-  /** Formats a Date object into a readable date string (e.g., "en-US" locale) */
+  // ==========================================
+  // DATE / TIME FORMATTING
+  // ==========================================
+
+  /**
+   * Converts a Date object into a readable date.
+   */
   const formatDate = (date: Date) => {
     return date.toLocaleDateString("en-US", {
       day: "2-digit",
@@ -108,7 +154,9 @@ export default function AddTask() {
     });
   };
 
-  /** Formats time into readable format (e.g., "en-US" locale, "14:30") */
+  /**
+   * Converts a Date object into a readable time.
+   */
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -117,110 +165,226 @@ export default function AddTask() {
   };
 
   // ==========================================
-  // MEDIA / IMAGE PICKER HANDLERS
+  // CAMERA
   // ==========================================
 
   /**
-   * Requests permission and launches the device camera.
+   * Requests camera permission and opens the device camera.
    */
   const handleTakePhoto = async () => {
     setIsMediaModalVisible(false);
 
-    // Request camera access permission
-    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-    if (!granted) {
-      Alert.alert(
-        "Permission denied",
-        "Camera access is required to take a photo.",
-      );
-      return;
-    }
+    try {
+      // Request permission to access the camera
+      const { granted } = await ImagePicker.requestCameraPermissionsAsync();
 
-    // Capture image
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true, // Allow cropping
-      aspect: [4, 3],
-      quality: 0.8, // Slight compression
-    });
+      if (!granted) {
+        Alert.alert(
+          "Permission denied",
+          "Camera access is required to take a photo.",
+        );
+        return;
+      }
 
-    if (!result.canceled && result.assets[0].uri) {
-      setImageUri(result.assets[0].uri);
+      // Open the camera
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      // Save the selected image URI
+      if (!result.canceled && result.assets.length > 0) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Camera error:", error);
+
+      Alert.alert("Camera error", "Unable to open the camera.");
     }
   };
 
+  // ==========================================
+  // GALLERY
+  // ==========================================
+
   /**
-   * Requests permission and opens the device photo gallery.
+   * Requests gallery permission and opens the photo library.
    */
   const handlePickGallery = async () => {
     setIsMediaModalVisible(false);
 
-    // Request gallery access permission
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) {
-      Alert.alert(
-        "Permission denied",
-        "Gallery access is required to select a photo.",
-      );
-      return;
-    }
+    try {
+      // Request permission to access the photo library
+      const { granted } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    // Select image
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+      if (!granted) {
+        Alert.alert(
+          "Permission denied",
+          "Gallery access is required to select a photo.",
+        );
+        return;
+      }
 
-    if (!result.canceled && result.assets[0].uri) {
-      setImageUri(result.assets[0].uri);
+      // Open the image gallery
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      // Save the selected image URI
+      if (!result.canceled && result.assets.length > 0) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Gallery error:", error);
+
+      Alert.alert("Gallery error", "Unable to open the photo gallery.");
     }
   };
 
   // ==========================================
-  // TASK SAVE HANDLER
+  // SAVE TASK
   // ==========================================
 
   /**
-   * Validates required fields, assembles task object, and saves.
+   * Saves the task to AsyncStorage.
+   *
+   * AsyncStorage stores the task as JSON on the device.
+   * The existing tasks are loaded first so that creating
+   * a new task does not delete previously saved tasks.
    */
-  const handleAddTask = () => {
-    // Validate title field
-    if (!title.trim()) {
-      setTitleError(true);
+  const handleAddTask = async () => {
+    // Prevent multiple save operations
+    if (isSaving) {
       return;
     }
 
-    // Merge selected date and time into a single Date object
-    const finalDueDate = new Date(
-      selectedDate.getFullYear(),
-      selectedDate.getMonth(),
-      selectedDate.getDate(),
-      selectedTime.getHours(),
-      selectedTime.getMinutes(),
-    );
+    // Validate the required title
+    if (!title.trim()) {
+      setTitleError(true);
 
-    // Build task object
-    const newTask = {
-      id: Date.now().toString(),
-      title: title.trim(),
-      description: description.trim(),
-      imageUri,
-      dueDate: finalDueDate.toISOString(),
-      createdAt: new Date().toISOString(),
-      status: "pending",
-    };
+      Alert.alert("Missing title", "Please enter a title for your task.");
 
-    console.log("New task created:", newTask);
+      return;
+    }
 
-    // Return to previous screen after creation
-    router.back();
+    try {
+      setIsSaving(true);
+
+      // Combine the selected date and selected time
+      const finalDueDate = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate(),
+        selectedTime.getHours(),
+        selectedTime.getMinutes(),
+        0,
+        0,
+      );
+
+      /**
+       * Create the new task.
+       *
+       * The fields completed and urgent are included because
+       * the home screen uses them to display task status.
+       *
+       * Additional information such as description, imageUri,
+       * dueDate and createdAt is also preserved.
+       */
+      const newTask = {
+        id: Date.now().toString(),
+
+        title: title.trim(),
+
+        description: description.trim(),
+
+        date: finalDueDate.toLocaleString("en-US", {
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+
+        dueDate: finalDueDate.toISOString(),
+
+        createdAt: new Date().toISOString(),
+
+        imageUri: imageUri,
+
+        completed: false,
+
+        urgent: false,
+
+        status: "pending",
+      };
+
+      // ------------------------------------------
+      // LOAD EXISTING TASKS
+      // ------------------------------------------
+
+      const storedTasks = await AsyncStorage.getItem(TASKS_STORAGE_KEY);
+
+      /**
+       * If tasks already exist, convert the JSON string
+       * back into a JavaScript array.
+       *
+       * Otherwise start with an empty array.
+       */
+      const existingTasks = storedTasks ? JSON.parse(storedTasks) : [];
+
+      // Make sure the stored data is actually an array
+      const tasks = Array.isArray(existingTasks) ? existingTasks : [];
+
+      // ------------------------------------------
+      // ADD NEW TASK
+      // ------------------------------------------
+
+      tasks.push(newTask);
+
+      // ------------------------------------------
+      // SAVE TASKS TO THE PHONE
+      // ------------------------------------------
+
+      await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+
+      console.log("Task saved successfully:", newTask);
+
+      // Show confirmation to the user
+      Alert.alert("Task created", "Your task has been saved successfully.", [
+        {
+          text: "OK",
+          onPress: () => {
+            router.back();
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error("Error saving task:", error);
+
+      Alert.alert(
+        "Save error",
+        "The task could not be saved. Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  // ==========================================
+  // RENDER
+  // ==========================================
 
   return (
     <SafeAreaView style={styles.safeContainer} edges={["top", "bottom"]}>
       <View style={styles.container}>
-        {/* ================= HEADER ================= */}
+        {/* ======================================
+            HEADER
+        ====================================== */}
+
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.headerBackButton}
@@ -232,21 +396,27 @@ export default function AddTask() {
 
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>New Task</Text>
+
             <Text style={styles.headerSubtitle}>Fill in details below</Text>
           </View>
         </View>
 
-        {/* ================= SCROLLABLE FORM ================= */}
+        {/* ======================================
+            FORM
+        ====================================== */}
+
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Field: Title */}
+          {/* Task title */}
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>
               Task Title <Text style={styles.required}>*</Text>
             </Text>
+
             <TextInput
               style={[styles.input, titleError && styles.inputError]}
               placeholder="E.g.: React Native Project Review"
@@ -254,17 +424,23 @@ export default function AddTask() {
               value={title}
               onChangeText={(text) => {
                 setTitle(text);
-                if (titleError && text.trim()) setTitleError(false);
+
+                if (titleError && text.trim()) {
+                  setTitleError(false);
+                }
               }}
             />
+
             {titleError && (
               <Text style={styles.errorText}>Title is required.</Text>
             )}
           </View>
 
-          {/* Field: Description */}
+          {/* Task description */}
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Description</Text>
+
             <TextInput
               style={[styles.input, styles.textArea]}
               placeholder="Add extra notes or details..."
@@ -276,12 +452,12 @@ export default function AddTask() {
             />
           </View>
 
-          {/* Field: Attachment / Photo */}
+          {/* Image attachment */}
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Attachment / Photo</Text>
 
             {imageUri ? (
-              // Display card if an image is selected
               <View style={styles.imageCard}>
                 <TouchableOpacity
                   activeOpacity={0.9}
@@ -300,6 +476,7 @@ export default function AddTask() {
                   >
                     <Text style={styles.imageActionText}>🔄 Change</Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[styles.imageActionBtn, styles.imageDeleteBtn]}
                     onPress={() => setImageUri(null)}
@@ -309,16 +486,17 @@ export default function AddTask() {
                 </View>
               </View>
             ) : (
-              // Drop / click zone if no image is chosen
               <TouchableOpacity
                 style={styles.uploadPlaceholder}
                 activeOpacity={0.7}
                 onPress={() => setIsMediaModalVisible(true)}
               >
                 <View style={styles.uploadIconBadge}>
-                  <Text style={{ fontSize: 22 }}>📸</Text>
+                  <Text style={styles.cameraEmoji}>📸</Text>
                 </View>
+
                 <Text style={styles.uploadTitle}>Add an Image</Text>
+
                 <Text style={styles.uploadSubtext}>
                   Take a photo or choose from gallery
                 </Text>
@@ -326,34 +504,42 @@ export default function AddTask() {
             )}
           </View>
 
-          {/* Date and Time Pickers */}
+          {/* Date and time */}
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Due Date and Time</Text>
+
             <View style={styles.dateTimeRow}>
-              {/* Date Selection Card */}
+              {/* Date */}
+
               <TouchableOpacity
                 style={styles.pickerCard}
                 activeOpacity={0.7}
                 onPress={() => setShowDatePicker(true)}
               >
                 <Text style={styles.pickerIcon}>📅</Text>
+
                 <View>
                   <Text style={styles.pickerLabel}>Date</Text>
+
                   <Text style={styles.pickerValue}>
                     {formatDate(selectedDate)}
                   </Text>
                 </View>
               </TouchableOpacity>
 
-              {/* Time Selection Card */}
+              {/* Time */}
+
               <TouchableOpacity
                 style={styles.pickerCard}
                 activeOpacity={0.7}
                 onPress={() => setShowTimePicker(true)}
               >
                 <Text style={styles.pickerIcon}>⏰</Text>
+
                 <View>
                   <Text style={styles.pickerLabel}>Time</Text>
+
                   <Text style={styles.pickerValue}>
                     {formatTime(selectedTime)}
                   </Text>
@@ -361,7 +547,8 @@ export default function AddTask() {
               </TouchableOpacity>
             </View>
 
-            {/* Native components triggered on click */}
+            {/* Native date picker */}
+
             {showDatePicker && (
               <DateTimePicker
                 value={selectedDate}
@@ -371,6 +558,8 @@ export default function AddTask() {
                 minimumDate={new Date()}
               />
             )}
+
+            {/* Native time picker */}
 
             {showTimePicker && (
               <DateTimePicker
@@ -382,27 +571,37 @@ export default function AddTask() {
             )}
           </View>
 
-          {/* Form Action Buttons */}
+          {/* ======================================
+              ACTION BUTTONS
+          ====================================== */}
+
           <View style={styles.actionContainer}>
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={[styles.primaryButton, isSaving && styles.disabledButton]}
               activeOpacity={0.8}
               onPress={handleAddTask}
+              disabled={isSaving}
             >
-              <Text style={styles.primaryButtonText}>Create Task</Text>
+              <Text style={styles.primaryButtonText}>
+                {isSaving ? "Saving..." : "Create Task"}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.secondaryButton}
               activeOpacity={0.6}
               onPress={() => router.back()}
+              disabled={isSaving}
             >
               <Text style={styles.secondaryButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
 
-        {/* ================= MODAL: IMAGE SOURCE SELECTION ================= */}
+        {/* ======================================
+            IMAGE SOURCE MODAL
+        ====================================== */}
+
         <Modal
           visible={isMediaModalVisible}
           transparent
@@ -416,6 +615,7 @@ export default function AddTask() {
           >
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Add a Photo</Text>
+
               <Text style={styles.modalSubtitle}>Choose an image source</Text>
 
               <TouchableOpacity
@@ -424,6 +624,7 @@ export default function AddTask() {
                 onPress={handleTakePhoto}
               >
                 <Text style={styles.modalOptionIcon}>📷</Text>
+
                 <Text style={styles.modalOptionText}>Take a Photo</Text>
               </TouchableOpacity>
 
@@ -433,6 +634,7 @@ export default function AddTask() {
                 onPress={handlePickGallery}
               >
                 <Text style={styles.modalOptionIcon}>🖼️</Text>
+
                 <Text style={styles.modalOptionText}>Choose from Gallery</Text>
               </TouchableOpacity>
 
@@ -446,7 +648,10 @@ export default function AddTask() {
           </TouchableOpacity>
         </Modal>
 
-        {/* ================= MODAL: FULLSCREEN IMAGE PREVIEW ================= */}
+        {/* ======================================
+            FULLSCREEN IMAGE PREVIEW
+        ====================================== */}
+
         <Modal
           visible={isPreviewModalVisible}
           transparent
@@ -460,6 +665,7 @@ export default function AddTask() {
             >
               <Text style={styles.closePreviewText}>✕</Text>
             </TouchableOpacity>
+
             {imageUri && (
               <Image
                 source={{ uri: imageUri }}
@@ -470,7 +676,10 @@ export default function AddTask() {
           </View>
         </Modal>
 
-        {/* ================= NAVIGATION FOOTER ================= */}
+        {/* ======================================
+            FOOTER
+        ====================================== */}
+
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.footerItem}
@@ -478,8 +687,9 @@ export default function AddTask() {
             activeOpacity={0.7}
           >
             <View style={styles.footerIconContainer}>
-              <Text style={{ fontSize: 18 }}>📋</Text>
+              <Text style={styles.footerIcon}>📋</Text>
             </View>
+
             <Text style={styles.footerLabel}>Tasks</Text>
           </TouchableOpacity>
 
@@ -489,8 +699,9 @@ export default function AddTask() {
             activeOpacity={0.7}
           >
             <View style={[styles.footerIconContainer, styles.footerIconActive]}>
-              <Text style={{ fontSize: 18 }}>➕</Text>
+              <Text style={styles.footerIcon}>➕</Text>
             </View>
+
             <Text style={[styles.footerLabel, styles.footerLabelActive]}>
               Add
             </Text>
@@ -498,15 +709,17 @@ export default function AddTask() {
 
           <TouchableOpacity style={styles.footerItem} activeOpacity={0.7}>
             <View style={styles.footerIconContainer}>
-              <Text style={{ fontSize: 18 }}>📊</Text>
+              <Text style={styles.footerIcon}>📊</Text>
             </View>
+
             <Text style={styles.footerLabel}>Stats</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.footerItem} activeOpacity={0.7}>
             <View style={styles.footerIconContainer}>
-              <Text style={{ fontSize: 18 }}>⚙️</Text>
+              <Text style={styles.footerIcon}>⚙️</Text>
             </View>
+
             <Text style={styles.footerLabel}>Menu</Text>
           </TouchableOpacity>
         </View>
@@ -516,19 +729,22 @@ export default function AddTask() {
 }
 
 // ==========================================
-// STYLES STYLESHEET
+// STYLES
 // ==========================================
+
 const styles = StyleSheet.create({
+  // Main containers
   safeContainer: {
     flex: 1,
     backgroundColor: "#ffffff",
   },
+
   container: {
     flex: 1,
     backgroundColor: "#f8fafc",
   },
 
-  /* Header */
+  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -538,6 +754,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
   },
+
   headerBackButton: {
     width: 40,
     height: 40,
@@ -547,33 +764,39 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 14,
   },
+
   headerBackIcon: {
     fontSize: 20,
     fontWeight: "600",
     color: "#0f172a",
   },
+
   headerTitleContainer: {
     flex: 1,
   },
+
   headerTitle: {
     fontSize: 20,
     fontWeight: "800",
     color: "#0f172a",
   },
+
   headerSubtitle: {
     fontSize: 12,
     color: "#64748b",
     marginTop: 2,
   },
 
-  /* Form Content */
+  // Form
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
   },
+
   inputGroup: {
     marginBottom: 22,
   },
+
   label: {
     fontSize: 13,
     fontWeight: "700",
@@ -582,9 +805,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+
   required: {
     color: "#ef4444",
   },
+
   input: {
     backgroundColor: "#ffffff",
     borderWidth: 1.5,
@@ -595,21 +820,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#0f172a",
   },
+
   inputError: {
     borderColor: "#ef4444",
   },
+
   errorText: {
     color: "#ef4444",
     fontSize: 12,
     marginTop: 6,
     fontWeight: "500",
   },
+
   textArea: {
     height: 110,
     textAlignVertical: "top",
   },
 
-  /* Image Cards and Upload */
+  // Image upload
   uploadPlaceholder: {
     backgroundColor: "#ffffff",
     borderWidth: 2,
@@ -620,6 +848,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   uploadIconBadge: {
     width: 48,
     height: 48,
@@ -629,17 +858,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 10,
   },
+
+  cameraEmoji: {
+    fontSize: 22,
+  },
+
   uploadTitle: {
     fontSize: 15,
     fontWeight: "700",
     color: "#1e293b",
     marginBottom: 4,
   },
+
   uploadSubtext: {
     fontSize: 12,
     color: "#64748b",
     textAlign: "center",
   },
+
   imageCard: {
     backgroundColor: "#ffffff",
     borderRadius: 16,
@@ -647,16 +883,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
+
   imagePreview: {
     width: "100%",
     height: 190,
   },
+
   imageOverlayControls: {
     flexDirection: "row",
     padding: 10,
     backgroundColor: "#ffffff",
     gap: 10,
   },
+
   imageActionBtn: {
     flex: 1,
     paddingVertical: 10,
@@ -664,25 +903,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#f1f5f9",
     alignItems: "center",
   },
+
   imageActionText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#334155",
   },
+
   imageDeleteBtn: {
     backgroundColor: "#fef2f2",
   },
+
   imageDeleteText: {
     fontSize: 13,
     fontWeight: "700",
     color: "#ef4444",
   },
 
-  /* Date and Time Components */
+  // Date and time
   dateTimeRow: {
     flexDirection: "row",
     gap: 12,
   },
+
   pickerCard: {
     flex: 1,
     flexDirection: "row",
@@ -694,15 +937,18 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
   },
+
   pickerIcon: {
     fontSize: 20,
   },
+
   pickerLabel: {
     fontSize: 11,
     fontWeight: "600",
     color: "#64748b",
     textTransform: "uppercase",
   },
+
   pickerValue: {
     fontSize: 14,
     fontWeight: "700",
@@ -710,43 +956,55 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Action Buttons */
+  // Buttons
   actionContainer: {
     marginTop: 10,
     gap: 12,
   },
+
   primaryButton: {
     backgroundColor: "#f6c945",
     paddingVertical: 18,
     borderRadius: 14,
     alignItems: "center",
     shadowColor: "#f6c945",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
+
+  disabledButton: {
+    opacity: 0.6,
+  },
+
   primaryButtonText: {
     color: "#08192d",
     fontSize: 16,
     fontWeight: "800",
   },
+
   secondaryButton: {
     paddingVertical: 14,
     alignItems: "center",
   },
+
   secondaryButtonText: {
     color: "#64748b",
     fontSize: 15,
     fontWeight: "600",
   },
 
-  /* Modals */
+  // Media modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.5)",
     justifyContent: "flex-end",
   },
+
   modalContent: {
     backgroundColor: "#ffffff",
     borderTopLeftRadius: 24,
@@ -754,16 +1012,19 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
+
   modalTitle: {
     fontSize: 18,
     fontWeight: "800",
     color: "#0f172a",
   },
+
   modalSubtitle: {
     fontSize: 13,
     color: "#64748b",
     marginBottom: 8,
   },
+
   modalOption: {
     flexDirection: "row",
     alignItems: "center",
@@ -772,36 +1033,42 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: 14,
   },
+
   modalOptionIcon: {
     fontSize: 20,
   },
+
   modalOptionText: {
     fontSize: 15,
     fontWeight: "700",
     color: "#1e293b",
   },
+
   modalCloseButton: {
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 4,
   },
+
   modalCloseText: {
     fontSize: 15,
     fontWeight: "700",
     color: "#64748b",
   },
 
-  /* Fullscreen Preview */
+  // Fullscreen image preview
   fullScreenModal: {
     flex: 1,
     backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
   },
+
   fullScreenImage: {
     width: "100%",
     height: "80%",
   },
+
   closePreviewButton: {
     position: "absolute",
     top: 50,
@@ -814,13 +1081,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 10,
   },
+
   closePreviewText: {
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "bold",
   },
 
-  /* Footer (Navigation Bar) */
+  // Bottom navigation
   footer: {
     height: 72,
     backgroundColor: "#ffffff",
@@ -831,12 +1099,14 @@ const styles = StyleSheet.create({
     borderTopColor: "#f1f5f9",
     paddingHorizontal: 8,
   },
+
   footerItem: {
     width: "25%",
     height: 64,
     alignItems: "center",
     justifyContent: "center",
   },
+
   footerIconContainer: {
     width: 39,
     height: 32,
@@ -844,15 +1114,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   footerIconActive: {
     backgroundColor: "#fff3c9",
   },
+
+  footerIcon: {
+    fontSize: 18,
+  },
+
   footerLabel: {
     fontSize: 10,
     fontWeight: "600",
     color: "#8993a2",
     marginTop: 3,
   },
+
   footerLabelActive: {
     color: "#08192d",
     fontWeight: "800",

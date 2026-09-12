@@ -1,10 +1,7 @@
-// Import vector icons provided by Expo
 import { Ionicons } from "@expo/vector-icons";
-// Import router for navigation between screens using expo-router
-import { router } from "expo-router";
-// Import React state hook
-import { useState } from "react";
-// Import core React Native components
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -13,31 +10,23 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-// Import safe area context provider to handle notches and system bars
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Import custom styles from external stylesheet
 import styles from "./styles";
 
-/**
- * Definition for available filter types in English
- */
+/** Local storage key used to persist tasks across sessions */
+export const TASKS_STORAGE_KEY = "@task_management_tasks";
+
 type FilterType = "All" | "Urgent" | "Completed";
 
-/**
- * Data structure definition for a task
- */
-type Task = {
-  id: string; // Unique identifier
-  title: string; // Task title or label
-  date: string; // Due date or time display text
-  completed: boolean; // Completion status
-  urgent: boolean; // Priority indicator
+export type Task = {
+  id: string;
+  title: string;
+  date: string;
+  completed: boolean;
+  urgent: boolean;
 };
 
-/**
- * Initial sample task list in English for rendering
- */
 const initialTasks: Task[] = [
   {
     id: "1",
@@ -69,33 +58,48 @@ const initialTasks: Task[] = [
   },
 ];
 
-/**
- * Main screen component (Index)
- */
 export default function Index() {
-  // --- STATES ---
-
-  // Main tasks array stored in local state
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
-
-  // Controls top-left dropdown menu visibility
   const [menuOpen, setMenuOpen] = useState(false);
-
-  // Controls collapse/expand state for urgent tasks section
   const [urgentOpen, setUrgentOpen] = useState(true);
-
-  // Controls collapse/expand state for standard tasks section
   const [tasksOpen, setTasksOpen] = useState(true);
-
-  // Currently selected task filter ("All", "Urgent", or "Completed")
   const [activeFilter, setActiveFilter] = useState<FilterType>("All");
 
-  // --- FUNCTIONS & EVENT HANDLERS ---
+  /** Loads tasks from phone storage when screen gains focus */
+  const loadTasks = async () => {
+    try {
+      const savedTasks = await AsyncStorage.getItem(TASKS_STORAGE_KEY);
+      if (savedTasks) {
+        setTasks(JSON.parse(savedTasks));
+      } else {
+        await AsyncStorage.setItem(
+          TASKS_STORAGE_KEY,
+          JSON.stringify(initialTasks),
+        );
+      }
+    } catch (error) {
+      console.error("Error loading tasks:", error);
+    }
+  };
 
-  /**
-   * Toggles the `completed` state of a specific task
-   * @param id Target task ID to update
-   */
+  useFocusEffect(
+    useCallback(() => {
+      loadTasks();
+    }, []),
+  );
+
+  /** Saves tasks state to local storage upon updates */
+  useEffect(() => {
+    const saveTasks = async () => {
+      try {
+        await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+      } catch (error) {
+        console.error("Error saving tasks:", error);
+      }
+    };
+    saveTasks();
+  }, [tasks]);
+
   const toggleTask = (id: string) => {
     setTasks((currentTasks) =>
       currentTasks.map((task) =>
@@ -104,9 +108,6 @@ export default function Index() {
     );
   };
 
-  /**
-   * Opens native system share sheet to share current task count
-   */
   const shareTasks = async () => {
     try {
       await Share.share({
@@ -117,16 +118,11 @@ export default function Index() {
     }
   };
 
-  /**
-   * Filters the task array based on `activeFilter` state
-   */
   const getFilteredTasks = () => {
     switch (activeFilter) {
       case "Urgent":
-        // Filter urgent AND non-completed tasks
         return tasks.filter((task) => task.urgent && !task.completed);
       case "Completed":
-        // Filter completed tasks
         return tasks.filter((task) => task.completed);
       case "All":
       default:
@@ -134,36 +130,21 @@ export default function Index() {
     }
   };
 
-  // --- DERIVED STATE VALUES ---
-
-  // Master filtered task array based on selection
   const filteredTasks = getFilteredTasks();
-
-  // Subset of tasks allocated to "URGENT" section
   const urgentTasks = filteredTasks.filter(
     (task) => task.urgent && !task.completed,
   );
-
-  // Subset of non-urgent or completed tasks allocated to general section
   const normalTasks = filteredTasks.filter(
     (task) => !task.urgent || task.completed,
   );
 
-  // Total count of completed tasks for stats section
   const completedCount = tasks.filter((task) => task.completed).length;
-
-  // Total count of pending tasks for stats section
   const pendingCount = tasks.filter((task) => !task.completed).length;
 
-  /**
-   * Updates active filter and automatically opens target sections
-   * @param filter New filter selected
-   */
   const changeFilter = (filter: FilterType) => {
     setActiveFilter(filter);
-    setMenuOpen(false); // Close dropdown menu if open
+    setMenuOpen(false);
 
-    // Auto-expand appropriate sections according to active filter
     if (filter === "Urgent") setUrgentOpen(true);
     if (filter === "All") {
       setUrgentOpen(true);
@@ -172,9 +153,6 @@ export default function Index() {
     if (filter === "Completed") setTasksOpen(true);
   };
 
-  /**
-   * Triggers native alert dialog for quick filter selection
-   */
   const showFilter = () => {
     Alert.alert("Filter Tasks", "Choose a filter to apply", [
       { text: "All", onPress: () => changeFilter("All") },
@@ -184,13 +162,10 @@ export default function Index() {
     ]);
   };
 
-  // --- COMPONENT RENDER ---
   return (
-    // SafeAreaView handles device notches and home indicator paddings
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* --- TOP HEADER BAR --- */}
+      {/* ==================== TOP HEADER ==================== */}
       <View style={styles.topBar}>
-        {/* Hamburger menu trigger */}
         <TouchableOpacity
           style={styles.headerButton}
           activeOpacity={0.7}
@@ -203,7 +178,6 @@ export default function Index() {
           />
         </TouchableOpacity>
 
-        {/* App title and dynamic active filter subtitle */}
         <View style={styles.titleContainer}>
           <Text style={styles.appTitle}>Task</Text>
           <Text style={styles.appSubtitle}>
@@ -213,7 +187,6 @@ export default function Index() {
           </Text>
         </View>
 
-        {/* Action icons (Filter dialog & Share) */}
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={[
@@ -240,10 +213,9 @@ export default function Index() {
         </View>
       </View>
 
-      {/* --- DROPDOWN MENU (CONDITIONALLY RENDERED) --- */}
+      {/* ==================== DROPDOWN MENU ==================== */}
       {menuOpen && (
         <View style={styles.menu}>
-          {/* Option: All tasks */}
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => changeFilter("All")}
@@ -259,7 +231,6 @@ export default function Index() {
             </View>
           </TouchableOpacity>
 
-          {/* Option: Urgent tasks */}
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => changeFilter("Urgent")}
@@ -275,7 +246,6 @@ export default function Index() {
             </View>
           </TouchableOpacity>
 
-          {/* Option: Navigate to time tracking screen */}
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => {
@@ -289,7 +259,6 @@ export default function Index() {
             <Text style={styles.menuText}>Track My Time</Text>
           </TouchableOpacity>
 
-          {/* Option: Completed tasks */}
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => changeFilter("Completed")}
@@ -311,13 +280,13 @@ export default function Index() {
         </View>
       )}
 
-      {/* --- SCROLLABLE MAIN CONTENT AREA --- */}
+      {/* ==================== MAIN CONTENT AREA ==================== */}
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* Greeting banner section */}
+        {/* Welcome greeting section */}
         <View style={styles.welcomeSection}>
           <View>
             <Text style={styles.greeting}>Hello 👋</Text>
@@ -335,7 +304,7 @@ export default function Index() {
           </View>
         </View>
 
-        {/* Statistical overview cards (Total, To Do, Completed) */}
+        {/* Statistical overview cards */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <View style={styles.statIcon}>
@@ -366,7 +335,7 @@ export default function Index() {
           </View>
         </View>
 
-        {/* Active filter badge banner with clear trigger */}
+        {/* Active filter clear banner */}
         {activeFilter !== "All" && (
           <View style={styles.activeFilterBanner}>
             <View style={styles.activeFilterLeft}>
@@ -388,10 +357,9 @@ export default function Index() {
           </View>
         )}
 
-        {/* --- URGENT TASKS ACCORDION SECTION --- */}
+        {/* Urgent Tasks Section */}
         {urgentTasks.length > 0 && (
           <View style={styles.section}>
-            {/* Section toggle header */}
             <TouchableOpacity
               style={styles.sectionHeader}
               activeOpacity={0.7}
@@ -416,7 +384,6 @@ export default function Index() {
               />
             </TouchableOpacity>
 
-            {/* List of urgent task cards */}
             {urgentOpen &&
               urgentTasks.map((task) => (
                 <TaskItem
@@ -428,10 +395,9 @@ export default function Index() {
           </View>
         )}
 
-        {/* --- REGULAR / COMPLETED TASKS ACCORDION SECTION --- */}
+        {/* Standard / Completed Tasks Section */}
         {normalTasks.length > 0 && (
           <View style={styles.section}>
-            {/* Section toggle header */}
             <TouchableOpacity
               style={styles.sectionHeader}
               activeOpacity={0.7}
@@ -455,7 +421,6 @@ export default function Index() {
               />
             </TouchableOpacity>
 
-            {/* List of standard task cards */}
             {tasksOpen &&
               normalTasks.map((task) => (
                 <TaskItem
@@ -467,7 +432,7 @@ export default function Index() {
           </View>
         )}
 
-        {/* --- EMPTY STATE VIEW --- */}
+        {/* Empty State View */}
         {filteredTasks.length === 0 && (
           <View style={styles.emptyState}>
             <View style={styles.emptyIcon}>
@@ -490,11 +455,10 @@ export default function Index() {
           </View>
         )}
 
-        {/* Bottom padding spacer preventing content overlap with bottom tab bar */}
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      {/* --- FLOATING ACTION BUTTON (FAB) --- */}
+      {/* Floating Action Button (FAB) */}
       <TouchableOpacity
         style={styles.addButton}
         activeOpacity={0.85}
@@ -503,7 +467,7 @@ export default function Index() {
         <Ionicons name="add" size={31} color="#08192d" />
       </TouchableOpacity>
 
-      {/* --- BOTTOM NAVIGATION BAR (FOOTER) --- */}
+      {/* Bottom Navigation Bar */}
       <View style={styles.footer}>
         <FooterItem icon="home" label="Home" active onPress={() => {}} />
         <FooterItem
@@ -526,11 +490,7 @@ export default function Index() {
   );
 }
 
-/**
- * Reusable component representing an individual task card
- * @param task Task object data to display
- * @param onPress Press handler toggling task completion status
- */
+/** Task item component displaying individual task state */
 function TaskItem({ task, onPress }: { task: Task; onPress: () => void }) {
   return (
     <TouchableOpacity
@@ -542,7 +502,6 @@ function TaskItem({ task, onPress }: { task: Task; onPress: () => void }) {
       activeOpacity={0.8}
       onPress={onPress}
     >
-      {/* Task checkbox toggle */}
       <View
         style={[
           styles.checkbox,
@@ -555,7 +514,6 @@ function TaskItem({ task, onPress }: { task: Task; onPress: () => void }) {
         )}
       </View>
 
-      {/* Task information details (Title & Date) */}
       <View style={styles.taskInfo}>
         <Text
           style={[styles.taskTitle, task.completed && styles.taskCompleted]}
@@ -570,7 +528,6 @@ function TaskItem({ task, onPress }: { task: Task; onPress: () => void }) {
         </View>
       </View>
 
-      {/* Urgent indicator badge displayed for active urgent tasks */}
       {task.urgent && !task.completed && (
         <View style={styles.urgentLabel}>
           <Ionicons name="alert-circle" size={12} color="#e53935" />
@@ -578,7 +535,6 @@ function TaskItem({ task, onPress }: { task: Task; onPress: () => void }) {
         </View>
       )}
 
-      {/* Forward chevron indicator for standard pending tasks */}
       {!task.urgent && !task.completed && (
         <Ionicons name="chevron-forward-outline" size={18} color="#c4cad3" />
       )}
@@ -586,13 +542,7 @@ function TaskItem({ task, onPress }: { task: Task; onPress: () => void }) {
   );
 }
 
-/**
- * Reusable component for bottom tab navigation bar items
- * @param icon Ionicons glyph identifier
- * @param label Text label for the item
- * @param active Boolean indicating if current tab is active
- * @param onPress Action trigger on tab press
- */
+/** Footer tab button item */
 function FooterItem({
   icon,
   label,
@@ -616,10 +566,9 @@ function FooterItem({
         <Ionicons
           name={icon}
           size={22}
-          color={active ? "#08192d" : "#8993a2"}
+          color={active ? "#08192d" : "#8a93a1"}
         />
       </View>
-
       <Text style={[styles.footerLabel, active && styles.footerLabelActive]}>
         {label}
       </Text>
