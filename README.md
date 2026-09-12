@@ -41,6 +41,8 @@ A 4–5 minute demonstration video will show the application running and explain
 
 [Software Demonstration Video]https://youtu.be/F6f6MfUI8AQ?si=nsg5EUvrSUj0luK9
 
+https://github.com/formationWeb-Lus/task-management.git
+
 > Replace the link above with the actual YouTube link before publishing the project on GitHub.
 
 ## Development Environment
